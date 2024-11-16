@@ -1,0 +1,82 @@
+---
+title: "Matching Adjusted Indirect Comparison"
+author: "Joshua Edefo"
+date: "2024-11-16"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+email: edefojoshua2000@yahoo.com
+---
+Libraries
+```{r a, message=FALSE}
+library(usethis)
+library(survey)  # For propensity weighting
+```
+
+Matching Adjusted Indirect Comparison and the different steps
+
+```{r c}
+# Step 1: Prepare your data
+# Example of individual patient data (IPD) from study A
+ipd_data <- data.frame(
+  age = c(45, 60, 52, 38, 50, 62),
+  sex = c(1, 0, 0, 1, 1, 0),  # 1 = Male, 0 = Female
+  outcome = c(1, 0, 0, 1, 1, 0)  # Binary outcome (e.g., response to treatment)
+)
+
+# Example of aggregate data from study B (e.g., summary statistics for age and sex)
+aggregate_summarised_data <- list(
+  mean_age = 50,       # Mean age in study B
+  prop_male = 0.6      # Proportion of males in study B
+)
+
+# Step 2: Calculate Weights Using Logistic Regression
+# Center the covariates by subtracting the study B mean and proportion
+ipd_data$age_centered <- ipd_data$age - aggregate_summarised_data$mean_age
+ipd_data$sex_centered <- ipd_data$sex - aggregate_summarised_data$prop_male
+
+# Fit logistic regression model to estimate the weights
+logit_model <- glm(rep(1, nrow(ipd_data)) ~ age_centered + sex_centered, 
+                   family = binomial(link = "logit"), data = ipd_data)
+
+# Calculate weights as the inverse of the predicted probabilities
+ipd_data$weights <- 1 / fitted(logit_model)
+
+# Step 3: Apply Weights and Calculate Weighted Outcome
+# Compare outcomes between the weighted IPD data and study B
+# Calculate weighted mean outcome in the IPD study
+weighted_mean_outcome <- svymean(~outcome, design = svydesign(~1, data = ipd_data, weights = ~weights))
+weighted_mean <- coef(weighted_mean_outcome)  # Extract the weighted mean
+weighted_variance <- attr(weighted_mean_outcome, "var")  # Extract the variance
+
+# Step 4: Compare with Aggregate Study B Outcome
+# Example reported outcome and variance from Study B
+aggregate_outcome <- 0.65  # Mean outcome in study B
+aggregate_variance <- 0.0025  # Variance for the comparator outcome
+
+# Calculate the treatment difference
+treatment_difference <- weighted_mean - aggregate_outcome
+treatment_difference
+
+# Calculate the combined variance (assuming outcomes are independent)
+combined_variance <- weighted_variance + aggregate_variance
+
+# Compute the standard error (SE)
+SE <- sqrt(combined_variance)
+
+# Calculate 95% confidence interval for the treatment difference
+CI_lower <- treatment_difference - 1.96 * SE
+CI_lower
+CI_upper <- treatment_difference + 1.96 * SE
+CI_upper
+
+# Print results
+cat("Weighted Outcome (IPD):", weighted_mean, "\n")
+cat("Aggregate Outcome (Study B):", aggregate_outcome, "\n")
+cat("Treatment Difference:", treatment_difference, "\n")
+cat("95% Confidence Interval:", CI_lower, "to", CI_upper, "\n")
+
+```
+
+
